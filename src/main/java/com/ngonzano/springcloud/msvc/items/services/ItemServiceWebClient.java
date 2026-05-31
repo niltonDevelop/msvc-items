@@ -47,4 +47,9 @@ public class ItemServiceWebClient implements ItemService {
                 () -> productClient.findById(id).map(product -> new Item(product, QUANTITY)),
                 throwable -> circuitBreakerFallback.findItemById(id, QUANTITY, throwable));
     }
+
+    @Override
+    public Optional<Item> findByIdDetails(Long id) {
+        return productClient.findById(id).map(product -> new Item(product, QUANTITY));
+    }
 }

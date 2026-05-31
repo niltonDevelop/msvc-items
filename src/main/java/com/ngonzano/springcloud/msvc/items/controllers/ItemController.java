@@ -13,18 +13,27 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ngonzano.springcloud.msvc.items.clients.ProductClient;
 import com.ngonzano.springcloud.msvc.items.models.Item;
+import com.ngonzano.springcloud.msvc.items.resilience.ProductCircuitBreakerFallback;
 import com.ngonzano.springcloud.msvc.items.services.ItemService;
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 
 @RestController
 @RequestMapping("/items")
 public class ItemController {
 
+    private static final int QUANTITY = 2;
+
     private final ItemService service;
+    private final ProductCircuitBreakerFallback circuitBreakerFallback;
     private final Logger logger = LoggerFactory.getLogger(ItemController.class);
 
-    public ItemController(ItemService service) {
+    public ItemController(ItemService service, ProductCircuitBreakerFallback circuitBreakerFallback) {
         this.service = service;
+        this.circuitBreakerFallback = circuitBreakerFallback;
     }
 
     @GetMapping
@@ -40,5 +49,19 @@ public class ItemController {
         Optional<Item> item = service.findById(id);
         logger.info("Item obtenido: {}", item);
         return item.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @CircuitBreaker(name = ProductClient.CIRCUIT_BREAKER_NAME, fallbackMethod = "findByIdDetailsFallback")
+    @TimeLimiter(name = ProductClient.CIRCUIT_BREAKER_NAME)
+    @GetMapping("/details/{id}")
+    public ResponseEntity<Item> findByIdDetails(@PathVariable Long id) {
+        Optional<Item> item = service.findByIdDetails(id);
+        logger.info("Item obtenido (details): {}", item);
+        return item.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @SuppressWarnings("unused")
+    private ResponseEntity<Item> findByIdDetailsFallback(Long id, Throwable throwable) {
+        return ResponseEntity.ok(circuitBreakerFallback.findItemById(id, QUANTITY, throwable).orElseThrow());
     }
 }

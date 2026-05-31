@@ -59,4 +59,17 @@ public class ItemServiceFeign implements ItemService {
                 },
                 throwable -> circuitBreakerFallback.findItemById(id, QUANTITY, throwable));
     }
+
+    @Override
+    public Optional<Item> findByIdDetails(Long id) {
+        try {
+            Product product = productFeignClient.details(id);
+            if (product == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new Item(product, QUANTITY));
+        } catch (FeignException.NotFound e) {
+            return Optional.empty();
+        }
+    }
 }

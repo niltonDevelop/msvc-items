@@ -10,37 +10,89 @@ Documentación del comportamiento actual del **Circuit Breaker** con **Resilienc
 
 Cuando la llamada a products **falla** o el circuito está **abierto**, el circuit breaker ejecuta un **fallback** que devuelve un **producto genérico**. El controller responde **200 OK** con ese item de respaldo.
 
-El controller **no** contiene lógica de circuit breaker; toda la resiliencia vive en la capa de cliente.
+Hay **dos formas** de aplicar el mismo circuit breaker (`products`), con el mismo fallback y la misma configuración en `application.yml`:
+
+| Enfoque | Endpoint | Dónde vive el CB |
+|---|---|---|
+| **Programático** | `GET /items/{id}` | `ItemServiceWebClient` (`CircuitBreakerFactory.run`) |
+| **Declarativo** | `GET /items/details/{id}` | `ItemController` (`@CircuitBreaker` + `@TimeLimiter`) |
+
+`ProductClient` es solo HTTP (WebClient); **no** contiene lógica de resiliencia.
 
 ---
 
 ## Arquitectura
 
+### Enfoque programático — `GET /items/{id}`
+
 ```text
-ItemController
-    └── ItemServiceWebClient (@Primary)
-            └── ProductClient                    ← Circuit Breaker aquí
-                    ├── supplier  → WebClient → msvc-products (Eureka)
-                    └── fallback  → ProductCircuitBreakerFallback
-                                          └── ProductFallback.generic(id)
+ItemController.findById()
+    └── ItemServiceWebClient.findById()          ← Circuit Breaker aquí
+            ├── supplier  → ProductClient → WebClient → msvc-products
+            └── fallback  → ProductCircuitBreakerFallback
+                                  └── ProductFallback.generic(id)
 ```
+
+### Enfoque declarativo — `GET /items/details/{id}`
+
+```text
+ItemController.findByIdDetails()               ← @CircuitBreaker + @TimeLimiter aquí
+    ├── supplier  → ItemServiceWebClient.findByIdDetails() → ProductClient → msvc-products
+    └── fallback  → findByIdDetailsFallback() → ProductCircuitBreakerFallback
+                                                          └── ProductFallback.generic(id)
+```
+
+> `findByIdDetails()` en el servicio **no** envuelve la llamada con circuit breaker, para que el decorador del controller reciba el fallo y pueda ejecutar el fallback.
 
 ### Archivos involucrados
 
 | Archivo | Rol |
 |---|---|
-| `clients/ProductClient.java` | Envuelve las llamadas HTTP con `CircuitBreakerFactory.run()` |
-| `resilience/ProductCircuitBreakerFallback.java` | Fallback invocado **solo** por el circuit breaker |
+| `clients/ProductClient.java` | Cliente HTTP con WebClient; define la constante `CIRCUIT_BREAKER_NAME = "products"` |
+| `services/ItemServiceWebClient.java` | CB programático en `findById` y `findAll`; `findByIdDetails` sin CB |
+| `controllers/ItemController.java` | CB declarativo en `findByIdDetails` (`@CircuitBreaker`, `@TimeLimiter`) |
+| `resilience/ProductCircuitBreakerFallback.java` | Fallback compartido por ambos enfoques |
 | `resilience/ProductFallback.java` | Construye el producto genérico de respaldo |
-| `resources/application.properties` | Única fuente de configuración Resilience4j (instancia `products`) |
-| `services/ItemServiceWebClient.java` | Mapea `Product` → `Item` (quantity = 2) |
-| `controllers/ItemController.java` | Expone `/items/{id}` — sin lógica de CB |
+| `resources/application.yml` | Configuración Resilience4j (instancia `products`) + time limiter activo |
 
-Implementación alternativa con **Feign** (`ItemServiceFeign`): usa el mismo circuit breaker `"products"` y el mismo fallback.
+Implementación alternativa con **Feign** (`ItemServiceFeign`): mismo circuit breaker `"products"` vía `CircuitBreakerFactory` en `findById` / `findAll`; `findByIdDetails` sin CB (para el endpoint declarativo del controller).
 
 ---
 
-## Flujo de una petición `GET /items/{id}`
+## Dos formas de aplicar el Circuit Breaker
+
+### 1. Programático (`CircuitBreakerFactory`)
+
+Usado en `ItemServiceWebClient` para `findById` y `findAll`:
+
+```java
+circuitBreakerFactory.create(ProductClient.CIRCUIT_BREAKER_NAME).run(
+        () -> productClient.findById(id).map(product -> new Item(product, QUANTITY)),
+        throwable -> circuitBreakerFallback.findItemById(id, QUANTITY, throwable));
+```
+
+- Integra **circuit breaker + time limiter** en llamadas síncronas.
+- La configuración de `application.yml` se aplica automáticamente al nombre `"products"`.
+- No requiere anotaciones ni AOP.
+
+### 2. Declarativo (`@CircuitBreaker`)
+
+Usado en `ItemController.findByIdDetails`:
+
+```java
+@CircuitBreaker(name = ProductClient.CIRCUIT_BREAKER_NAME, fallbackMethod = "findByIdDetailsFallback")
+@TimeLimiter(name = ProductClient.CIRCUIT_BREAKER_NAME)
+@GetMapping("/details/{id}")
+public ResponseEntity<Item> findByIdDetails(@PathVariable Long id) { ... }
+```
+
+- El `name` debe coincidir con la instancia en `application.yml` (`products`).
+- `fallbackMethod` apunta a un método **en la misma clase** con la misma firma + `Throwable` al final.
+- Requiere `spring-boot-starter-aspectj` (Spring Boot 4; sustituye al antiguo `spring-boot-starter-aop`).
+
+---
+
+## Flujo de una petición `GET /items/{id}` (programático)
 
 ```mermaid
 sequenceDiagram
@@ -50,7 +102,7 @@ sequenceDiagram
     participant Products as msvc-products
 
     Cliente->>Items: GET /items/{id}
-    Items->>CB: run(supplier, fallback)
+    Items->>CB: ItemServiceWebClient.run(supplier, fallback)
 
     alt Circuito CLOSED o HALF_OPEN
         CB->>Products: GET /product/{id}
@@ -77,6 +129,48 @@ sequenceDiagram
 
 ---
 
+## Flujo de una petición `GET /items/details/{id}` (declarativo)
+
+```mermaid
+sequenceDiagram
+    participant Cliente
+    participant Ctrl as ItemController
+    participant CB as @CircuitBreaker "products"
+    participant Svc as ItemServiceWebClient
+    participant Products as msvc-products
+
+    Cliente->>Ctrl: GET /items/details/{id}
+    Ctrl->>CB: @CircuitBreaker + @TimeLimiter
+
+    alt Circuito CLOSED o HALF_OPEN
+        CB->>Svc: findByIdDetails(id) — sin CB
+        Svc->>Products: GET /product/{id}
+        alt Respuesta OK
+            Products-->>Svc: 200 + Product
+            Svc-->>CB: Optional<Item>
+            CB-->>Ctrl: ResponseEntity 200
+            Ctrl-->>Cliente: 200 + Item real
+        else 404 Not Found
+            Products-->>Svc: 404
+            Svc-->>CB: Optional.empty()
+            CB-->>Ctrl: ResponseEntity 404
+            Ctrl-->>Cliente: 404
+        else Error 5xx o Timeout
+            Products-->>Svc: fallo
+            Svc-->>CB: excepción
+            CB->>CB: findByIdDetailsFallback()
+            CB-->>Ctrl: ResponseEntity 200 genérico
+            Ctrl-->>Cliente: 200 + Item genérico
+        end
+    else Circuito OPEN
+        CB->>CB: findByIdDetailsFallback() (sin llamar a products)
+        CB-->>Ctrl: ResponseEntity 200 genérico
+        Ctrl-->>Cliente: 200 + Item genérico
+    end
+```
+
+---
+
 ## Estados del Circuit Breaker
 
 Resilience4j maneja tres estados:
@@ -89,13 +183,18 @@ Resilience4j maneja tres estados:
 
 ### Cuándo se abre el circuito
 
-Configuración actual en `application.properties`:
+Configuración actual en `application.yml`:
 
-```properties
-resilience4j.circuitbreaker.instances.products.slidingWindowSize=10
-resilience4j.circuitbreaker.instances.products.minimumNumberOfCalls=5
-resilience4j.circuitbreaker.instances.products.failureRateThreshold=50
-resilience4j.circuitbreaker.instances.products.waitDurationInOpenState=10s
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      products:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        slowCallDurationThreshold: 3s
 ```
 
 | Propiedad | Valor | Significado |
@@ -115,18 +214,30 @@ resilience4j.circuitbreaker.instances.products.waitDurationInOpenState=10s
 
 Además del circuit breaker, hay un **time limiter** de 3 segundos:
 
-```properties
-resilience4j.timelimiter.instances.products.timeoutDuration=3s
-resilience4j.timelimiter.instances.products.cancelRunningFuture=true
+```yaml
+spring:
+  cloud:
+    circuitbreaker:
+      resilience4j:
+        disable-time-limiter: false
+
+resilience4j:
+  timelimiter:
+    instances:
+      products:
+        timeoutDuration: 3s
+        cancelRunningFuture: true
 ```
 
-Spring Cloud Circuit Breaker + Resilience4j lee estas propiedades automáticamente; no hace falta un `@Configuration` Java para valores numéricos o duraciones.
+Spring Cloud Circuit Breaker + Resilience4j lee estas propiedades automáticamente; no hace falta un `@Configuration` Java para valores numéricos o duraciones. En el enfoque declarativo, `@TimeLimiter(name = "products")` usa la misma instancia.
 
 Si la llamada a products supera 3 segundos, se cancela y el circuit breaker ejecuta el **fallback**.
 
 ---
 
 ## Casos de prueba
+
+> Los casos **CP-01 a CP-08** usan `GET /items/{id}` (enfoque programático). El comportamiento es equivalente en `GET /items/details/{id}` (enfoque declarativo); sustituye la URL en los comandos `curl` para validar el decorador `@CircuitBreaker`.
 
 Base URL de items: `http://localhost:8002`
 
@@ -325,6 +436,25 @@ curl -i http://localhost:8002/items
 | CP-07 | `/items/10` tras 10s | HALF_OPEN→OPEN | 200 | Sí | Item genérico |
 | CP-08 | `/items/1` con CB OPEN | OPEN | 200 | Sí | Item genérico |
 | CP-09 | `/items` sin products | CLOSED | 5xx | No (excepción) | `{"error":"..."}` |
+| CP-10 | `/items/details/10` | CLOSED | 200 | Sí (declarativo) | `"category": "fallback"` |
+
+---
+
+### CP-10 — Declarativo: fallback vía `@CircuitBreaker` en controller
+
+| Campo | Valor |
+|---|---|
+| **Enfoque** | Declarativo (`@CircuitBreaker` en `ItemController`) |
+| **Estado CB** | CLOSED |
+| **Objetivo** | Verificar el decorador en `/items/details/{id}` |
+| **Petición** | `GET http://localhost:8002/items/details/10` |
+| **HTTP esperado** | `200 OK` |
+| **Body esperado** | Item genérico (`"category": "fallback"`) |
+| **Log items** | `Circuit breaker fallback — producto genérico para id=10: ...` |
+
+```bash
+curl -i http://localhost:8002/items/details/10
+```
 
 ---
 
@@ -350,6 +480,7 @@ CP-09 es independiente (requiere detener products).
 - [ ] Recuperación a item real tras espera de 10s (CP-06)
 - [ ] Reapertura del circuito si half-open falla (CP-07)
 - [ ] Fallback genérico incluso para ids válidos con CB OPEN (CP-08)
+- [ ] Fallback declarativo en `/items/details/{id}` (CP-10)
 
 ---
 
@@ -397,14 +528,16 @@ Circuit breaker ABIERTO — producto genérico para id=10
 
 ---
 
-## Diferencia: `findById` vs `findAll`
+## Diferencia entre métodos y endpoints
 
-| Método | Circuit Breaker | Fallback |
-|---|---|---|
-| `ProductClient.findById()` | Sí | Item genérico vía `ProductCircuitBreakerFallback` |
-| `ProductClient.findAll()` | Sí | Relanza excepción vía `ProductServiceErrorHandler` (502/504/503) |
+| Método / endpoint | Circuit Breaker | Dónde | Fallback |
+|---|---|---|---|
+| `ItemServiceWebClient.findById()` → `GET /items/{id}` | Sí | Programático (`CircuitBreakerFactory`) | Item genérico |
+| `ItemController.findByIdDetails()` → `GET /items/details/{id}` | Sí | Declarativo (`@CircuitBreaker`) | Item genérico |
+| `ItemServiceWebClient.findByIdDetails()` | No | — | Propaga fallos al controller |
+| `ItemServiceWebClient.findAll()` → `GET /items` | Sí | Programático | Relanza excepción (502/504/503) |
 
-Solo `findById` tiene fallback con producto genérico. `findAll` propaga errores al `ItemExceptionHandler`.
+Solo `findById` y `findByIdDetails` devuelven item genérico ante fallo. `findAll` propaga errores al `ItemExceptionHandler`.
 
 ---
 
@@ -412,22 +545,31 @@ Solo `findById` tiene fallback con producto genérico. `findAll` propaga errores
 
 Para que se abra con **menos fallos**, por ejemplo tras 3 fallos consecutivos:
 
-```properties
-resilience4j.circuitbreaker.instances.products.slidingWindowSize=3
-resilience4j.circuitbreaker.instances.products.minimumNumberOfCalls=3
-resilience4j.circuitbreaker.instances.products.failureRateThreshold=100
+```yaml
+resilience4j:
+  circuitbreaker:
+    instances:
+      products:
+        slidingWindowSize: 3
+        minimumNumberOfCalls: 3
+        failureRateThreshold: 100
 ```
 
 Reinicia `msvc-items` después de cambiar propiedades.
 
 ---
 
-## Dependencia Maven
+## Dependencias Maven
 
 ```xml
 <dependency>
     <groupId>org.springframework.cloud</groupId>
     <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+</dependency>
+<!-- Necesario para @CircuitBreaker / @TimeLimiter (Spring Boot 4) -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-aspectj</artifactId>
 </dependency>
 ```
 
@@ -436,12 +578,14 @@ Reinicia `msvc-items` después de cambiar propiedades.
 ## Referencia rápida
 
 ```text
-Nombre del circuit breaker : "products"
+Nombre del circuit breaker : "products"  (ProductClient.CIRCUIT_BREAKER_NAME)
 Timeout                    : 3 segundos
 Mínimo llamadas p/ evaluar : 5
 Umbral de fallos           : 50%
 Ventana deslizante         : 10 llamadas
 Tiempo en OPEN             : 10 segundos
 Puerto items               : 8002
-Endpoint                   : GET /items/{id}
+Endpoint programático      : GET /items/{id}
+Endpoint declarativo       : GET /items/details/{id}
+Configuración              : src/main/resources/application.yml
 ```

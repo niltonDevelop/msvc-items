@@ -15,16 +15,17 @@ Microservicio **Spring Boot** que expone una API REST de **ítems** (producto + 
 | Paquete / clase | Rol |
 |-----------------|-----|
 | `MsvcItemsApplication` | Arranque; `@SpringBootApplication`, `@EnableFeignClients` |
-| `controllers.ItemController` | REST: listado y detalle bajo `/items` |
-| `services.ItemService` | Contrato del servicio de ítems |
+| `controllers.ItemController` | REST: `/items`, `/items/{id}`, `/items/details/{id}` (CB declarativo en details) |
+| `services.ItemService` | Contrato del servicio de ítems (`findById`, `findByIdDetails`, `findAll`) |
 | `services.ItemServiceFeign` | Implementación Feign (no activa si hay otra `@Primary`) |
-| `services.ItemServiceWebClient` | Implementación con **`WebClient`** + `@LoadBalanced` (marcada **`@Primary`**) |
+| `services.ItemServiceWebClient` | WebClient `@Primary`; CB programático en `findById` / `findAll` |
+| `clients.ProductClient` | Cliente HTTP WebClient; constante `CIRCUIT_BREAKER_NAME = "products"` |
 | `clients.ProductFeignClient` | Cliente Feign hacia `msvc-products` |
 | `clients.WebClientConfig` | Bean **`WebClient.Builder`** con **`@LoadBalanced`** |
 | `models.Item` | DTO de ítem (producto, cantidad, total) |
 | `models.Product` | DTO alineado al JSON devuelto por **products** (incl. campos opcionales como `port` si los rellenas en código) |
 
-Configuración: `src/main/resources/application.properties`.  
+Configuración: `application.properties` (general) + `application.yml` (Resilience4j).
 Depuración en VS Code / Cursor: `.vscode/launch.json` (opcional).
 
 ## Dependencias Maven (`pom.xml`)
@@ -40,6 +41,7 @@ Dependencias directas principales:
 | `spring-cloud-starter-openfeign` | Clientes HTTP declarativos (`@FeignClient`) |
 | `spring-cloud-starter-loadbalancer` | Balanceo de llamadas Feign por **nombre de servicio** (`msvc-products`) |
 | `spring-cloud-starter-circuitbreaker-resilience4j` | Circuit breaker y time limiter hacia **products** (ver [CIRCUIT-BREAKER.md](./CIRCUIT-BREAKER.md)) |
+| `spring-boot-starter-aspectj` | Aspectos para `@CircuitBreaker` / `@TimeLimiter` en el controller |
 | `lombok` | Reducción de boilerplate (`@Getter` / `@Setter`, etc.) |
 | `spring-boot-configuration-processor` | Metadatos de configuración para el IDE (opcional, procesador de anotaciones) |
 Tests:
@@ -62,7 +64,10 @@ Si solo tienes **una** instancia de products, puedes dejar una sola entrada en `
 
 Las llamadas a **msvc-products** están protegidas con **Resilience4j** (instancia `products`): time limiter, estados CLOSED/OPEN/HALF_OPEN y fallback con item genérico.
 
-Documentación completa (arquitectura, configuración, **9 casos de prueba** CP-01 a CP-09, logs): **[CIRCUIT-BREAKER.md](./CIRCUIT-BREAKER.md)**
+- **`GET /items/{id}`** — circuit breaker **programático** en `ItemServiceWebClient` (`CircuitBreakerFactory`)
+- **`GET /items/details/{id}`** — circuit breaker **declarativo** en `ItemController` (`@CircuitBreaker` + `@TimeLimiter`)
+
+Configuración en `application.yml`. Documentación completa (arquitectura, **10 casos de prueba** CP-01 a CP-10, logs): **[CIRCUIT-BREAKER.md](./CIRCUIT-BREAKER.md)**
 
 ## Endpoints HTTP (este servicio)
 
@@ -71,7 +76,8 @@ Base: `http://localhost:8002`
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/items` | Lista de ítems |
-| GET | `/items/{id}` | Ítem para el producto `{id}`; 404 con mensaje si no hay producto |
+| GET | `/items/{id}` | Ítem por id; CB programático en servicio |
+| GET | `/items/details/{id}` | Ítem por id; CB declarativo (`@CircuitBreaker`) |
 
 Ejemplo:
 
