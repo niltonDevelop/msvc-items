@@ -1,0 +1,23 @@
+# Resilience4j — instancia "products" (nombre en ProductClient.CIRCUIT_BREAKER_NAME)
+spring:
+  cloud:
+    circuitbreaker:
+      resilience4j:
+        disable-time-limiter: false
+
+resilience4j:
+  timelimiter:
+    instances:
+      products:
+        # Time limiter: timeout 3s (product id=7 duerme 5s → fallback)
+        timeoutDuration: 3s
+        cancelRunningFuture: true
+  circuitbreaker:
+    instances:
+      products:
+        # Abre con ≥50% fallos tras 5 llamadas en ventana de 10; OPEN 10s antes de HALF_OPEN
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        slowCallDurationThreshold: 3s
