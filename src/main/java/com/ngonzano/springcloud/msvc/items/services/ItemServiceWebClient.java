@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import com.ngonzano.springcloud.msvc.items.clients.ProductClient;
 import com.ngonzano.springcloud.msvc.items.models.Item;
+import com.ngonzano.springcloud.msvc.items.models.Product;
 import com.ngonzano.springcloud.msvc.items.resilience.ProductCircuitBreakerFallback;
 import com.ngonzano.springcloud.msvc.items.resilience.ProductServiceErrorHandler;
 
@@ -51,5 +52,20 @@ public class ItemServiceWebClient implements ItemService {
     @Override
     public Optional<Item> findByIdDetails(Long id) {
         return productClient.findById(id).map(product -> new Item(product, QUANTITY));
+    }
+
+    @Override
+    public Product save(Product product) {
+        return productClient.save(product);
+    }
+
+    @Override
+    public Product update(Product product, Long id) {
+        return productClient.update(product, id);
+    }
+
+    @Override
+    public void delete(Long id) {
+        productClient.delete(id);
     }
 }

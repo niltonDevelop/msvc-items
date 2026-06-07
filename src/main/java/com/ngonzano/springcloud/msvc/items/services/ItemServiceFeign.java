@@ -72,4 +72,19 @@ public class ItemServiceFeign implements ItemService {
             return Optional.empty();
         }
     }
+
+    @Override
+    public Product save(Product product) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public Product update(Product product, Long id) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    @Override
+    public void delete(Long id) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
 }

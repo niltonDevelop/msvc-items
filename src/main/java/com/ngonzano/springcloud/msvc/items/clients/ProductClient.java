@@ -45,4 +45,35 @@ public class ProductClient {
                 .onErrorResume(WebClientResponseException.NotFound.class, e -> Mono.empty())
                 .blockOptional();
     }
+
+    public Product save(Product product) {
+        return webClientBuilder.build()
+                .post()
+                .uri("/product")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(product)
+                .retrieve()
+                .bodyToMono(Product.class)
+                .block();
+    }
+
+    public Product update(Product product, Long id) {
+        return webClientBuilder.build()
+                .put()
+                .uri("/product/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(product)
+                .retrieve()
+                .bodyToMono(Product.class)
+                .block();
+    }
+
+    public void delete(Long id) {
+        webClientBuilder.build()
+                .delete()
+                .uri("/product/{id}", id)
+                .retrieve()
+                .toBodilessEntity()
+                .block();
+    }
 }
