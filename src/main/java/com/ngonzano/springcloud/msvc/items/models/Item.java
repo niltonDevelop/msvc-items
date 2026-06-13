@@ -1,5 +1,7 @@
 package com.ngonzano.springcloud.msvc.items.models;
 
+import com.ngonzano.libs.msvc.commons.entities.Product;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -10,8 +12,10 @@ public class Item {
     private Integer quantity;
     private Double total;
 
-    /** obtiene el total de un item
-     * @param product the product
+    /**
+     * obtiene el total de un item
+     * 
+     * @param product  the product
      * @param quantity the quantity
      * @return el total de un item
      */

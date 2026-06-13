@@ -24,9 +24,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ngonzano.libs.msvc.commons.entities.Product;
 import com.ngonzano.springcloud.msvc.items.clients.ProductClient;
 import com.ngonzano.springcloud.msvc.items.models.Item;
-import com.ngonzano.springcloud.msvc.items.models.Product;
 import com.ngonzano.springcloud.msvc.items.resilience.ProductCircuitBreakerFallback;
 import com.ngonzano.springcloud.msvc.items.services.ItemService;
 

@@ -1,6 +1,6 @@
 package com.ngonzano.springcloud.msvc.items.resilience;
 
-import com.ngonzano.springcloud.msvc.items.models.Product;
+import com.ngonzano.libs.msvc.commons.entities.Product;
 
 public final class ProductFallback {
 

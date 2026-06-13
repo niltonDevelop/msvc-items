@@ -115,6 +115,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.ngonzano.libs.msvc.commons</groupId>
+            <artifactId>libs-msvc-commons</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
     </dependencies>
     <dependencyManagement>
         <dependencies>
@@ -125,6 +130,7 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+           
         </dependencies>
     </dependencyManagement>
 

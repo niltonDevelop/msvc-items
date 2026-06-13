@@ -6,7 +6,7 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 
-import com.ngonzano.springcloud.msvc.items.models.Product;
+import com.ngonzano.libs.msvc.commons.entities.Product;
 
 @FeignClient(name = "msvc-products")
 public interface ProductFeignClient {

@@ -6,14 +6,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import com.ngonzano.libs.msvc.commons.entities.Product;
 import com.ngonzano.springcloud.msvc.items.models.Item;
-import com.ngonzano.springcloud.msvc.items.models.Product;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 
 /**
- * Fallback invocado exclusivamente por el circuit breaker ({@code CircuitBreakerFactory.run}).
- * Ante fallo del servicio upstream o circuito abierto, devuelve un producto genérico.
+ * Fallback invocado exclusivamente por el circuit breaker
+ * ({@code CircuitBreakerFactory.run}).
+ * Ante fallo del servicio upstream o circuito abierto, devuelve un producto
+ * genérico.
  */
 @Component
 public class ProductCircuitBreakerFallback {
