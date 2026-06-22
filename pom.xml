@@ -115,6 +115,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Micrometer Tracing (Brave) + exportación a Zipkin — https://docs.micrometer.io/tracing/reference/ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-zipkin</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.ngonzano.libs.msvc.commons</groupId>
             <artifactId>libs-msvc-commons</artifactId>

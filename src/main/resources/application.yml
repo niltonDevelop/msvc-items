@@ -1,3 +1,21 @@
+# Micrometer Tracing — https://docs.micrometer.io/tracing/reference/
+# Spring Boot 4: https://docs.spring.io/spring-boot/reference/actuator/tracing.html
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans
+  observations:
+    annotations:
+      enabled: true
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-},%X{spanId:-}] "
+  include-application-name: false
+
 # Resilience4j — instancia "products" (nombre en ProductClient.CIRCUIT_BREAKER_NAME)
 spring:
   cloud:

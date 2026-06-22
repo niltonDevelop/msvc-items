@@ -7,6 +7,7 @@ Microservicio de **ítems** (producto + cantidad). Agrega datos del catálogo co
 - Java 21 · Spring Boot 4.0.6 · Spring Cloud 2025.1.1
 - Puerto: **8002** (local) · **8005** (default remoto) · **8007** (prod) — según perfil y Config Server
 - Perfil activo: `dev`
+- **Distributed tracing:** [Micrometer Tracing](https://docs.micrometer.io/tracing/reference/) + Zipkin (Brave). Ver [docs/TRACING.md](docs/TRACING.md)
 
 ## Endpoints
 
@@ -47,3 +48,11 @@ Microservicio **agregador** que demuestra patrones avanzados: Config Server, com
 **Consumido por:** **msvc-gateway-server** (proxy).
 
 **Orden de arranque recomendado:** 5.º, después de Eureka, Config Server y msvc-products.
+
+## Tracing (Zipkin)
+
+```bash
+cd ../.. && docker compose up -d   # desde msvc-items → raíz SpringCloud; Zipkin en http://localhost:9411
+```
+
+Detalle de configuración, propagación Feign/WebClient y verificación: [docs/TRACING.md](docs/TRACING.md).
